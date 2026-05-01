@@ -10,7 +10,7 @@ bool filter(const void *value);
 int main(void)
 {
     AvlTree *tree;
-    avltree_new(&tree, sizeof(int), compare_ints, NULL);
+    avltree_new(&tree, sizeof(int), true, compare_ints, NULL);
 
     avltree_add(tree, &(int){4});
     avltree_add(tree, &(int){2});
