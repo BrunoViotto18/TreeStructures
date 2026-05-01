@@ -187,7 +187,7 @@ BTreeError btree_exists(BTree *tree, const void *key, bool *exists);
 /// Modifying the copied value does not modify the tree.
 BTreeError btree_get(BTree *tree, const void *key, void *value);
 
-BTreeError btree_set(BTree *tree, const void *key, void *value);
+BTreeError btree_set(BTree *tree, const void *key, const void *value);
 
 /// @brief Adds a value to a binary tree.
 ///

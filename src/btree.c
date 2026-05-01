@@ -211,7 +211,7 @@ BTreeError btree_get(BTree *tree, const void *key, void *value)
     return BTREE_OK;
 }
 
-BTreeError btree_set(BTree *tree, const void *key, void *value)
+BTreeError btree_set(BTree *tree, const void *key, const void *value)
 {
     if (tree == NULL || key == NULL || value == NULL)
     {
@@ -475,11 +475,6 @@ void node_detach(BTree *tree, BTreeNode *node)
     node->left = NULL;
     node->right = NULL;
     node->parent = NULL;
-}
-
-void noop_free(void *value)
-{
-    (void)value;
 }
 
 const void *get_value_key(const void *value)

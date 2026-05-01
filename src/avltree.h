@@ -11,6 +11,8 @@
 /// resources when the stored value is removed or destroyed.
 typedef struct AvlTree AvlTree;
 
+typedef struct AvlTreeIterator AvlTreeIterator;
+
 /// @brief Function used to extract a comparable key from a stored value.
 ///
 /// @param value Pointer to a value.
@@ -28,6 +30,8 @@ typedef const void *(*AvlTreeGetKeyFunction)(const void *value);
 /// @return A value less than, equal to, or greater than zero if `left` is
 /// respectively less than, equal to, or greater than `right`.
 typedef int (*AvlTreeCompareKeyFunction)(const void *left, const void *right);
+
+typedef bool (*AvlTreeFilterFunction)(const void *value);
 
 /// @brief Cleanup function called before a stored value is destroyed.
 ///
@@ -57,7 +61,7 @@ enum AvlTreeError
     AVLTREE_NULL_POINTER_ARGUMENT,
 
     /// @brief The requested value was not found in the tree.
-    AVLTREE_VALUE_NOT_FOUND,
+    AVLTREE_KEY_NOT_FOUND,
 
     /// @brief The caller-provided output buffer is too small.
     AVLTREE_BUFFER_TOO_SMALL,
@@ -69,7 +73,11 @@ enum AvlTreeError
     AVLTREE_INVALID_ELEMENT_SIZE,
 
     /// @brief The value has a NULL key.
-    AVLTREE_NULL_KEY
+    AVLTREE_NULL_KEY,
+
+    AVLTREE_ITERATOR_END,
+
+    AVLTREE_ITERATOR_INVALID
 };
 
 /// @brief Creates a new empty AVL tree.
@@ -92,7 +100,7 @@ enum AvlTreeError
 /// @retval AVLTREE_NULL_POINTER_ARGUMENT If `tree == NULL` or `compare_keys == NULL`.
 /// @retval AVLTREE_INVALID_ELEMENT_SIZE If `element_size == 0`, or `element_size` is too large to safely allocate a node.
 /// @retval AVLTREE_OUT_OF_MEMORY If memory allocation failed.
-AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyFunction compare_keys, AvlTreeGetKeyFunction get_key, AvlTreeFreeValueFunction free_function);
+AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyFunction compare_keys, AvlTreeGetKeyFunction get_key);
 
 /// @brief Frees a binary tree and all values stored in it.
 ///
@@ -105,7 +113,7 @@ AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyF
 /// @param tree Tree to free. May be NULL.
 ///
 /// @warning After this function returns, `tree` must not be used again.
-void avltree_free(AvlTree *tree);
+void avltree_free(AvlTree *tree, AvlTreeFreeValueFunction free_function);
 
 /// @brief Removes all values from a binary tree.
 ///
@@ -121,7 +129,7 @@ void avltree_free(AvlTree *tree);
 /// @return `AVLTREE_OK` if the tree was cleared successfully.
 /// @retval AVLTREE_OK If the tree was cleared successfully.
 /// @retval AVLTREE_NULL_POINTER_ARGUMENT If `tree == NULL`.
-AvlTreeError avltree_clear(AvlTree *tree);
+AvlTreeError avltree_clear(AvlTree *tree, AvlTreeFreeValueFunction free_function);
 
 /// @brief Gets the number of values stored in a binary tree.
 ///
@@ -177,13 +185,15 @@ AvlTreeError avltree_exists(AvlTree *tree, const void *key, bool *exists);
 /// @return `AVLTREE_OK` if a matching value was found.
 /// @retval AVLTREE_OK If a matching value was found.
 /// @retval AVLTREE_NULL_POINTER_ARGUMENT If `tree == NULL`, `key == NULL`, or `value == NULL`.
-/// @retval AVLTREE_VALUE_NOT_FOUND If no matching key exists in the tree.
+/// @retval AVLTREE_KEY_NOT_FOUND If no matching key exists in the tree.
 ///
 /// @warning The returned value pointer is owned by the tree. Do not free it.
 ///
 /// @warning The returned value may be modified, but the modification must not
 /// change the value's key. Changing the key corrupts the tree ordering.
-AvlTreeError avltree_get(AvlTree *tree, const void *key, void **value);
+AvlTreeError avltree_get(AvlTree *tree, const void *key, void *value);
+
+AvlTreeError avltree_set(AvlTree *tree, const void *key, const void *value);
 
 /// @brief Adds a value to a binary tree.
 ///
@@ -219,7 +229,15 @@ AvlTreeError avltree_add(AvlTree *tree, const void *value);
 /// @return `AVLTREE_OK` if a matching value was removed successfully.
 /// @retval AVLTREE_OK If a matching value was removed successfully.
 /// @retval AVLTREE_NULL_POINTER_ARGUMENT If `tree == NULL` or `key == NULL`.
-/// @retval AVLTREE_VALUE_NOT_FOUND If no matching key exists in the tree.
-AvlTreeError avltree_remove(AvlTree *tree, const void *key);
+/// @retval AVLTREE_KEY_NOT_FOUND If no matching key exists in the tree.
+AvlTreeError avltree_remove(AvlTree *tree, const void *key, void *value);
+
+AvlTreeError avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter_function);
+
+void avltree_iterator_free(AvlTreeIterator *iterator);
+
+AvlTreeError avltree_iterator_next(AvlTreeIterator *iterator, void *value);
+
+AvlTreeError avltree_iterator_getvalue(AvlTreeIterator *iterator, void *value);
 
 #endif
