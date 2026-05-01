@@ -33,6 +33,7 @@ struct AvlTree
     AvlTreeNode *root;
     size_t count;
     size_t element_size;
+    bool unique_keys;
     AvlTreeGetKeyFunction get_key;
     AvlTreeCompareKeyFunction compare_keys;
     size_t version;
@@ -53,11 +54,11 @@ struct AvlTreeIterator
     AvlTree *tree;
     AvlTreeNode *current;
     AvlTreeNode *next;
-    AvlTreeFilterFunction filter_function;
+    AvlTreeFilterFunction filter;
     size_t version;
 };
 
-AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyFunction compare_keys, AvlTreeGetKeyFunction get_key)
+AvlTreeStatus avltree_new(AvlTree **tree, size_t element_size, bool unique_keys, AvlTreeCompareKeyFunction compare_keys, AvlTreeGetKeyFunction get_key)
 {
     if (tree == NULL)
     {
@@ -76,8 +77,6 @@ AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyF
         return AVLTREE_NULL_POINTER_ARGUMENT;
     }
 
-    *tree = NULL;
-
     AvlTree *new_tree = malloc(sizeof **tree);
 
     if (new_tree == NULL)
@@ -88,6 +87,7 @@ AvlTreeError avltree_new(AvlTree **tree, size_t element_size, AvlTreeCompareKeyF
     new_tree->root = NULL;
     new_tree->count = 0;
     new_tree->element_size = element_size;
+    new_tree->unique_keys = unique_keys;
     new_tree->get_key = get_key != NULL ? get_key : get_value_key;
     new_tree->compare_keys = compare_keys;
     new_tree->version = 0;
@@ -108,7 +108,7 @@ void avltree_free(AvlTree *tree, AvlTreeFreeValueFunction free_function)
     free(tree);
 }
 
-AvlTreeError avltree_clear(AvlTree *tree, AvlTreeFreeValueFunction free_function)
+AvlTreeStatus avltree_clear(AvlTree *tree, AvlTreeFreeValueFunction free_function)
 {
     if (tree == NULL)
     {
@@ -143,7 +143,7 @@ AvlTreeError avltree_clear(AvlTree *tree, AvlTreeFreeValueFunction free_function
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_getcount(AvlTree *tree, size_t *count)
+AvlTreeStatus avltree_getcount(AvlTree *tree, size_t *count)
 {
     if (tree == NULL || count == NULL)
     {
@@ -155,7 +155,7 @@ AvlTreeError avltree_getcount(AvlTree *tree, size_t *count)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_toarray(AvlTree *tree, void *buffer, size_t length)
+AvlTreeStatus avltree_toarray(AvlTree *tree, void *buffer, size_t length)
 {
     if (tree == NULL)
     {
@@ -191,7 +191,7 @@ AvlTreeError avltree_toarray(AvlTree *tree, void *buffer, size_t length)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_exists(AvlTree *tree, const void *key, bool *exists)
+AvlTreeStatus avltree_exists(AvlTree *tree, const void *key, bool *exists)
 {
     if (tree == NULL || key == NULL || exists == NULL)
     {
@@ -205,7 +205,7 @@ AvlTreeError avltree_exists(AvlTree *tree, const void *key, bool *exists)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_get(AvlTree *tree, const void *key, void *value)
+AvlTreeStatus avltree_get(AvlTree *tree, const void *key, void *value)
 {
     if (tree == NULL || key == NULL || value == NULL)
     {
@@ -224,33 +224,7 @@ AvlTreeError avltree_get(AvlTree *tree, const void *key, void *value)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_set(AvlTree *tree, const void *key, const void *value)
-{
-    if (tree == NULL || key == NULL || value == NULL)
-    {
-        return AVLTREE_NULL_POINTER_ARGUMENT;
-    }
-
-    const void *value_key = tree->get_key(value);
-
-    if (value_key == NULL)
-    {
-        return AVLTREE_NULL_KEY;
-    }
-
-    AvlTreeNode *node = get_node_by_key(tree, key);
-
-    if (node == NULL)
-    {
-        return AVLTREE_KEY_NOT_FOUND;
-    }
-
-    memcpy(node->value, value, tree->element_size);
-
-    return AVLTREE_OK;
-}
-
-AvlTreeError avltree_add(AvlTree *tree, const void *value)
+AvlTreeStatus avltree_add(AvlTree *tree, const void *value)
 {
     if (tree == NULL || value == NULL)
     {
@@ -279,6 +253,11 @@ AvlTreeError avltree_add(AvlTree *tree, const void *value)
         int comparison = tree->compare_keys(value_key, key);
         if (comparison <= 0)
         {
+            if (comparison == 0 && tree->unique_keys)
+            {
+                return AVLTREE_KEY_ALREADY_EXISTS;
+            }
+
             node_ref = &(*node_ref)->left;
         }
         else
@@ -306,7 +285,7 @@ AvlTreeError avltree_add(AvlTree *tree, const void *value)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_remove(AvlTree *tree, const void *key, void *value)
+AvlTreeStatus avltree_remove(AvlTree *tree, const void *key, void *value)
 {
     if (tree == NULL || key == NULL)
     {
@@ -340,7 +319,7 @@ AvlTreeError avltree_remove(AvlTree *tree, const void *key, void *value)
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter_function)
+AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter)
 {
     if (tree == NULL || iterator == NULL)
     {
@@ -360,7 +339,7 @@ AvlTreeError avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, Avl
     new_iterator->current = NULL;
     new_iterator->next = get_first_node_inorder(tree->root);
     new_iterator->version = tree->version;
-    new_iterator->filter_function = filter_function;
+    new_iterator->filter = filter;
 
     *iterator = new_iterator;
 
@@ -377,7 +356,7 @@ void avltree_iterator_free(AvlTreeIterator *iterator)
     free(iterator);
 }
 
-AvlTreeError avltree_iterator_next(AvlTreeIterator *iterator, void *value)
+AvlTreeStatus avltree_iterator_next(AvlTreeIterator *iterator, void *value)
 {
     if (iterator == NULL || value == NULL)
     {
@@ -399,14 +378,14 @@ AvlTreeError avltree_iterator_next(AvlTreeIterator *iterator, void *value)
         }
 
         iterator->next = get_next_node_inorder(iterator->current);
-    } while (iterator->filter_function != NULL && !iterator->filter_function(iterator->current->value));
+    } while (iterator->filter != NULL && !iterator->filter(iterator->current->value));
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
 
     return AVLTREE_OK;
 }
 
-AvlTreeError avltree_iterator_getvalue(AvlTreeIterator *iterator, void *value)
+AvlTreeStatus avltree_iterator_getvalue(AvlTreeIterator *iterator, void *value)
 {
     if (iterator == NULL || value == NULL)
     {
