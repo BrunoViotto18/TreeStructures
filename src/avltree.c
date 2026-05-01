@@ -224,6 +224,32 @@ AvlTreeError avltree_get(AvlTree *tree, const void *key, void *value)
     return AVLTREE_OK;
 }
 
+AvlTreeError avltree_set(AvlTree *tree, const void *key, const void *value)
+{
+    if (tree == NULL || key == NULL || value == NULL)
+    {
+        return AVLTREE_NULL_POINTER_ARGUMENT;
+    }
+
+    const void *value_key = tree->get_key(value);
+
+    if (value_key == NULL)
+    {
+        return AVLTREE_NULL_KEY;
+    }
+
+    AvlTreeNode *node = get_node_by_key(tree, key);
+
+    if (node == NULL)
+    {
+        return AVLTREE_KEY_NOT_FOUND;
+    }
+
+    memcpy(node->value, value, tree->element_size);
+
+    return AVLTREE_OK;
+}
+
 AvlTreeError avltree_add(AvlTree *tree, const void *value)
 {
     if (tree == NULL || value == NULL)
@@ -282,7 +308,7 @@ AvlTreeError avltree_add(AvlTree *tree, const void *value)
 
 AvlTreeError avltree_remove(AvlTree *tree, const void *key, void *value)
 {
-    if (tree == NULL || key == NULL || value == NULL)
+    if (tree == NULL || key == NULL)
     {
         return AVLTREE_NULL_POINTER_ARGUMENT;
     }
@@ -301,7 +327,10 @@ AvlTreeError avltree_remove(AvlTree *tree, const void *key, void *value)
 
     node_detach_full(tree, node);
 
-    memcpy(value, node->value, tree->element_size);
+    if (value != NULL)
+    {
+        memcpy(value, node->value, tree->element_size);
+    }
 
     free(node);
 
@@ -536,6 +565,11 @@ AvlTreeNode *get_node_by_key(AvlTree *tree, const void *key)
 
 AvlTreeNode *get_first_node_inorder(AvlTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     while (node->left != NULL)
     {
         node = node->left;
@@ -546,6 +580,11 @@ AvlTreeNode *get_first_node_inorder(AvlTreeNode *node)
 
 AvlTreeNode *get_next_node_inorder(AvlTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     if (node->right != NULL)
     {
         return get_first_node_inorder(node->right);
@@ -561,6 +600,11 @@ AvlTreeNode *get_next_node_inorder(AvlTreeNode *node)
 
 AvlTreeNode *get_first_node_postorder(AvlTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     while (node->left != NULL || node->right != NULL)
     {
         if (node->left != NULL)
@@ -578,6 +622,11 @@ AvlTreeNode *get_first_node_postorder(AvlTreeNode *node)
 
 AvlTreeNode *get_next_node_postorder(AvlTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     AvlTreeNode *parent = node->parent;
 
     if (parent == NULL)
