@@ -11,6 +11,8 @@
 /// resources when the stored value is removed or destroyed.
 typedef struct BTree BTree;
 
+typedef struct BTreeIterator BTreeIterator;
+
 /// @brief Function used to extract a comparable key from a stored value.
 ///
 /// @param value Pointer to a value.
@@ -69,7 +71,11 @@ enum BTreeError
     BTREE_INVALID_ELEMENT_SIZE,
 
     /// @brief The value has a NULL key.
-    BTREE_NULL_KEY
+    BTREE_NULL_KEY,
+
+    BTREE_ITERATOR_END,
+
+    BTREE_ITERATOR_INVALID
 };
 
 /// @brief Creates a new empty binary tree.
@@ -221,5 +227,13 @@ BTreeError btree_add(BTree *tree, const void *value);
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL` or `key == NULL`.
 /// @retval BTREE_VALUE_NOT_FOUND If no matching key exists in the tree.
 BTreeError btree_remove(BTree *tree, const void *key);
+
+BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator);
+
+void btree_iterator_free(BTreeIterator *iterator);
+
+BTreeError btree_iterator_next(BTreeIterator *iterator, void *value);
+
+BTreeError btree_iterator_getvalue(BTreeIterator *iterator, void *value);
 
 #endif

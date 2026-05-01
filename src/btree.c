@@ -10,7 +10,7 @@ static void node_free(BTree *tree, BTreeNode *node);
 static void node_detach(BTree *tree, BTreeNode *node);
 static void noop_free(void *value);
 static const void *get_value_key(const void *value);
-BTreeNode **get_parent_child_ref(BTree *tree, BTreeNode *node);
+static BTreeNode **get_parent_child_ref(BTree *tree, BTreeNode *node);
 
 static BTreeNode *get_node_by_key(BTree *tree, const void *key);
 static BTreeNode *get_first_node_inorder(BTreeNode *node);
@@ -26,6 +26,7 @@ struct BTree
     BTreeGetKeyFunction get_key;
     BTreeCompareKeyFunction compare_keys;
     BTreeFreeValueFunction free_value;
+    size_t version;
 };
 
 struct BTreeNode
@@ -35,6 +36,14 @@ struct BTreeNode
     BTreeNode *parent;
     max_align_t align;
     unsigned char value[];
+};
+
+struct BTreeIterator
+{
+    BTree *tree;
+    BTreeNode *current;
+    BTreeNode *next;
+    size_t version;
 };
 
 BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction compare_keys, BTreeGetKeyFunction get_key, BTreeFreeValueFunction free_value)
@@ -56,19 +65,22 @@ BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction 
         return BTREE_NULL_POINTER_ARGUMENT;
     }
 
-    *tree = malloc(sizeof **tree);
+    BTree *new_tree = malloc(sizeof **tree);
 
-    if (*tree == NULL)
+    if (new_tree == NULL)
     {
         return BTREE_OUT_OF_MEMORY;
     }
 
-    (*tree)->root = NULL;
-    (*tree)->count = 0;
-    (*tree)->element_size = element_size;
-    (*tree)->get_key = get_key != NULL ? get_key : get_value_key;
-    (*tree)->compare_keys = compare_keys;
-    (*tree)->free_value = free_value != NULL ? free_value : noop_free;
+    new_tree->root = NULL;
+    new_tree->count = 0;
+    new_tree->element_size = element_size;
+    new_tree->get_key = get_key != NULL ? get_key : get_value_key;
+    new_tree->compare_keys = compare_keys;
+    new_tree->free_value = free_value != NULL ? free_value : noop_free;
+    new_tree->version = 0;
+
+    *tree = new_tree;
 
     return BTREE_OK;
 }
@@ -110,6 +122,7 @@ BTreeError btree_clear(BTree *tree)
 
     tree->root = NULL;
     tree->count = 0;
+    tree->version++;
 
     return BTREE_OK;
 }
@@ -245,6 +258,7 @@ BTreeError btree_add(BTree *tree, const void *value)
     *node_ref = new_node;
 
     tree->count++;
+    tree->version++;
 
     return BTREE_OK;
 }
@@ -272,6 +286,91 @@ BTreeError btree_remove(BTree *tree, const void *key)
     node_free(tree, node);
 
     tree->count--;
+    tree->version++;
+
+    return BTREE_OK;
+}
+
+BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator)
+{
+    if (tree == NULL || iterator == NULL)
+    {
+        return BTREE_NULL_POINTER_ARGUMENT;
+    }
+
+    *iterator = NULL;
+
+    BTreeIterator *new_iterator = malloc(sizeof(BTreeIterator));
+
+    if (new_iterator == NULL)
+    {
+        return BTREE_OUT_OF_MEMORY;
+    }
+
+    new_iterator->tree = tree;
+    new_iterator->current = NULL;
+    new_iterator->next = get_first_node_inorder(tree->root);
+    new_iterator->version = tree->version;
+
+    *iterator = new_iterator;
+
+    return BTREE_OK;
+}
+
+void btree_iterator_free(BTreeIterator *iterator)
+{
+    if (iterator == NULL)
+    {
+        return;
+    }
+
+    free(iterator);
+}
+
+BTreeError btree_iterator_next(BTreeIterator *iterator, void *value)
+{
+    if (iterator == NULL || value == NULL)
+    {
+        return BTREE_NULL_POINTER_ARGUMENT;
+    }
+
+    if (iterator->version != iterator->tree->version)
+    {
+        return BTREE_ITERATOR_INVALID;
+    }
+
+    iterator->current = iterator->next;
+
+    if (iterator->current == NULL)
+    {
+        return BTREE_ITERATOR_END;
+    }
+
+    memcpy(value, iterator->current->value, iterator->tree->element_size);
+
+    iterator->next = get_next_node_inorder(iterator->current);
+
+    return BTREE_OK;
+}
+
+BTreeError btree_iterator_getvalue(BTreeIterator *iterator, void *value)
+{
+    if (iterator == NULL || value == NULL)
+    {
+        return BTREE_NULL_POINTER_ARGUMENT;
+    }
+
+    if (iterator->version != iterator->tree->version)
+    {
+        return BTREE_ITERATOR_INVALID;
+    }
+
+    if (iterator->current == NULL)
+    {
+        return BTREE_VALUE_NOT_FOUND;
+    }
+
+    memcpy(value, iterator->current->value, iterator->tree->element_size);
 
     return BTREE_OK;
 }
@@ -395,6 +494,11 @@ BTreeNode *get_node_by_key(BTree *tree, const void *key)
 
 BTreeNode *get_first_node_inorder(BTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     while (node->left != NULL)
     {
         node = node->left;
@@ -405,6 +509,11 @@ BTreeNode *get_first_node_inorder(BTreeNode *node)
 
 BTreeNode *get_next_node_inorder(BTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     if (node->right != NULL)
     {
         return get_first_node_inorder(node->right);
@@ -420,6 +529,11 @@ BTreeNode *get_next_node_inorder(BTreeNode *node)
 
 BTreeNode *get_first_node_postorder(BTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     while (node->left != NULL || node->right != NULL)
     {
         if (node->left != NULL)
@@ -437,6 +551,11 @@ BTreeNode *get_first_node_postorder(BTreeNode *node)
 
 BTreeNode *get_next_node_postorder(BTreeNode *node)
 {
+    if (node == NULL)
+    {
+        return NULL;
+    }
+
     BTreeNode *parent = node->parent;
 
     if (parent == NULL)
