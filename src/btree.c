@@ -6,9 +6,7 @@
 typedef struct BTreeNode BTreeNode;
 
 static BTreeNode *node_new(BTree *tree, const void *value);
-static void node_free(BTree *tree, BTreeNode *node);
 static void node_detach(BTree *tree, BTreeNode *node);
-static void noop_free(void *value);
 static const void *get_value_key(const void *value);
 static BTreeNode **get_parent_child_ref(BTree *tree, BTreeNode *node);
 
@@ -25,7 +23,6 @@ struct BTree
     size_t element_size;
     BTreeGetKeyFunction get_key;
     BTreeCompareKeyFunction compare_keys;
-    BTreeFreeValueFunction free_value;
     size_t version;
 };
 
@@ -43,10 +40,11 @@ struct BTreeIterator
     BTree *tree;
     BTreeNode *current;
     BTreeNode *next;
+    BTreeFilterFunction filter_function;
     size_t version;
 };
 
-BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction compare_keys, BTreeGetKeyFunction get_key, BTreeFreeValueFunction free_value)
+BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction compare_keys, BTreeGetKeyFunction get_key)
 {
     if (tree == NULL)
     {
@@ -77,7 +75,6 @@ BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction 
     new_tree->element_size = element_size;
     new_tree->get_key = get_key != NULL ? get_key : get_value_key;
     new_tree->compare_keys = compare_keys;
-    new_tree->free_value = free_value != NULL ? free_value : noop_free;
     new_tree->version = 0;
 
     *tree = new_tree;
@@ -85,18 +82,18 @@ BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction 
     return BTREE_OK;
 }
 
-void btree_free(BTree *tree)
+void btree_free(BTree *tree, BTreeFreeValueFunction free_function)
 {
     if (tree == NULL)
     {
         return;
     }
 
-    btree_clear(tree);
+    btree_clear(tree, free_function);
     free(tree);
 }
 
-BTreeError btree_clear(BTree *tree)
+BTreeError btree_clear(BTree *tree, BTreeFreeValueFunction free_function)
 {
     if (tree == NULL)
     {
@@ -115,7 +112,13 @@ BTreeError btree_clear(BTree *tree)
         BTreeNode *next = get_next_node_postorder(node);
 
         node_detach(tree, node);
-        node_free(tree, node);
+
+        if (free_function != NULL)
+        {
+            free_function(node->value);
+        }
+
+        free(node);
 
         node = next;
     }
@@ -189,7 +192,7 @@ BTreeError btree_exists(BTree *tree, const void *key, bool *exists)
     return BTREE_OK;
 }
 
-BTreeError btree_get(BTree *tree, const void *key, void **value)
+BTreeError btree_get(BTree *tree, const void *key, void *value)
 {
     if (tree == NULL || key == NULL || value == NULL)
     {
@@ -200,11 +203,36 @@ BTreeError btree_get(BTree *tree, const void *key, void **value)
 
     if (node == NULL)
     {
-        *value = NULL;
-        return BTREE_VALUE_NOT_FOUND;
+        return BTREE_KEY_NOT_FOUND;
     }
 
-    *value = node->value;
+    memcpy(value, node->value, tree->element_size);
+
+    return BTREE_OK;
+}
+
+BTreeError btree_set(BTree *tree, const void *key, void *value)
+{
+    if (tree == NULL || key == NULL || value == NULL)
+    {
+        return BTREE_NULL_POINTER_ARGUMENT;
+    }
+
+    const void *value_key = tree->get_key(value);
+
+    if (value_key == NULL)
+    {
+        return BTREE_NULL_KEY;
+    }
+
+    BTreeNode *node = get_node_by_key(tree, key);
+
+    if (node == NULL)
+    {
+        return BTREE_KEY_NOT_FOUND;
+    }
+
+    memcpy(node->value, value, tree->element_size);
 
     return BTREE_OK;
 }
@@ -263,7 +291,7 @@ BTreeError btree_add(BTree *tree, const void *value)
     return BTREE_OK;
 }
 
-BTreeError btree_remove(BTree *tree, const void *key)
+BTreeError btree_remove(BTree *tree, const void *key, void *value)
 {
     if (tree == NULL || key == NULL)
     {
@@ -272,18 +300,24 @@ BTreeError btree_remove(BTree *tree, const void *key)
 
     if (tree->count == 0)
     {
-        return BTREE_VALUE_NOT_FOUND;
+        return BTREE_KEY_NOT_FOUND;
     }
 
     BTreeNode *node = get_node_by_key(tree, key);
 
     if (node == NULL)
     {
-        return BTREE_VALUE_NOT_FOUND;
+        return BTREE_KEY_NOT_FOUND;
     }
 
     node_detach(tree, node);
-    node_free(tree, node);
+
+    if (value != NULL)
+    {
+        memcpy(value, node->value, tree->element_size);
+    }
+
+    free(node);
 
     tree->count--;
     tree->version++;
@@ -291,7 +325,7 @@ BTreeError btree_remove(BTree *tree, const void *key)
     return BTREE_OK;
 }
 
-BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator)
+BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilterFunction filter_function)
 {
     if (tree == NULL || iterator == NULL)
     {
@@ -311,6 +345,7 @@ BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator)
     new_iterator->current = NULL;
     new_iterator->next = get_first_node_inorder(tree->root);
     new_iterator->version = tree->version;
+    new_iterator->filter_function = filter_function;
 
     *iterator = new_iterator;
 
@@ -339,16 +374,19 @@ BTreeError btree_iterator_next(BTreeIterator *iterator, void *value)
         return BTREE_ITERATOR_INVALID;
     }
 
-    iterator->current = iterator->next;
-
-    if (iterator->current == NULL)
+    do
     {
-        return BTREE_ITERATOR_END;
-    }
+        iterator->current = iterator->next;
+
+        if (iterator->current == NULL)
+        {
+            return BTREE_ITERATOR_END;
+        }
+
+        iterator->next = get_next_node_inorder(iterator->current);
+    } while (iterator->filter_function != NULL && !iterator->filter_function(iterator->current->value));
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
-
-    iterator->next = get_next_node_inorder(iterator->current);
 
     return BTREE_OK;
 }
@@ -367,7 +405,7 @@ BTreeError btree_iterator_getvalue(BTreeIterator *iterator, void *value)
 
     if (iterator->current == NULL)
     {
-        return BTREE_VALUE_NOT_FOUND;
+        return BTREE_ITERATOR_END;
     }
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
@@ -390,12 +428,6 @@ BTreeNode *node_new(BTree *tree, const void *value)
     memcpy(node->value, value, tree->element_size);
 
     return node;
-}
-
-void node_free(BTree *tree, BTreeNode *node)
-{
-    tree->free_value(node->value);
-    free(node);
 }
 
 void node_detach(BTree *tree, BTreeNode *node)

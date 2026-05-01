@@ -31,6 +31,8 @@ typedef const void *(*BTreeGetKeyFunction)(const void *value);
 /// respectively less than, equal to, or greater than `right`.
 typedef int (*BTreeCompareKeyFunction)(const void *left, const void *right);
 
+typedef bool (*BTreeFilterFunction)(const void *value);
+
 /// @brief Cleanup function called before a stored value is destroyed.
 ///
 /// The `value` pointer points to the value stored inside the tree node.
@@ -59,7 +61,7 @@ enum BTreeError
     BTREE_NULL_POINTER_ARGUMENT,
 
     /// @brief The requested value was not found in the tree.
-    BTREE_VALUE_NOT_FOUND,
+    BTREE_KEY_NOT_FOUND,
 
     /// @brief The caller-provided output buffer is too small.
     BTREE_BUFFER_TOO_SMALL,
@@ -90,15 +92,13 @@ enum BTreeError
 /// @param get_key Optional function used to extract a key from a value.
 /// May be NULL. If NULL, the value itself is used as the key.
 /// The returned key pointer must not be NULL.
-/// @param free_function Optional cleanup function called when a stored value is removed or destroyed.
-/// May be NULL. If NULL, no value-specific cleanup is performed.
 ///
 /// @return `BTREE_OK` if the tree was created successfully.
 /// @retval BTREE_OK If the tree was created successfully.
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL` or `compare_keys == NULL`.
 /// @retval BTREE_INVALID_ELEMENT_SIZE If `element_size == 0`, or `element_size` is too large to safely allocate a node.
 /// @retval BTREE_OUT_OF_MEMORY If memory allocation failed.
-BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction compare_keys, BTreeGetKeyFunction get_key, BTreeFreeValueFunction free_function);
+BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction compare_keys, BTreeGetKeyFunction get_key);
 
 /// @brief Frees a binary tree and all values stored in it.
 ///
@@ -111,7 +111,7 @@ BTreeError btree_new(BTree **tree, size_t element_size, BTreeCompareKeyFunction 
 /// @param tree Tree to free. May be NULL.
 ///
 /// @warning After this function returns, `tree` must not be used again.
-void btree_free(BTree *tree);
+void btree_free(BTree *tree, BTreeFreeValueFunction free_function);
 
 /// @brief Removes all values from a binary tree.
 ///
@@ -127,7 +127,7 @@ void btree_free(BTree *tree);
 /// @return `BTREE_OK` if the tree was cleared successfully.
 /// @retval BTREE_OK If the tree was cleared successfully.
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL`.
-BTreeError btree_clear(BTree *tree);
+BTreeError btree_clear(BTree *tree, BTreeFreeValueFunction free_function);
 
 /// @brief Gets the number of values stored in a binary tree.
 ///
@@ -167,29 +167,27 @@ BTreeError btree_toarray(BTree *tree, void *buffer, size_t length);
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL`, `key == NULL`, or `exists == NULL`.
 BTreeError btree_exists(BTree *tree, const void *key, bool *exists);
 
-/// @brief Gets a stored value by key.
-///
-/// The key is compared against stored values using the tree's key comparison
-/// function. The key pointer is passed directly to the comparison function; it
-/// is not passed through the tree's get_key function.
-///
-/// If a matching key is found, `*value` receives a mutable pointer to the stored
-/// value inside the tree.
+/// @brief Copies a stored value by key into caller-provided storage.
 ///
 /// @param tree Tree to inspect. Must not be NULL.
 /// @param key Pointer to the key to search for. Must not be NULL.
-/// @param value Output pointer that receives a pointer to the stored value. Must not be NULL.
+/// @param value Pointer to a writable object of the same type and size as the
+/// values stored in the tree. Must not be NULL.
 ///
-/// @return `BTREE_OK` if a matching value was found.
-/// @retval BTREE_OK If a matching value was found.
+/// @return `BTREE_OK` if a matching value was copied.
+/// @retval BTREE_OK If a matching value was copied.
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL`, `key == NULL`, or `value == NULL`.
-/// @retval BTREE_VALUE_NOT_FOUND If no matching key exists in the tree.
+/// @retval BTREE_KEY_NOT_FOUND If no matching key exists in the tree.
 ///
-/// @warning The returned value pointer is owned by the tree. Do not free it.
+/// @warning `value` must point to writable storage of at least the tree's
+/// element size. Passing the address of an object of the wrong type or smaller
+/// size causes undefined behavior.
 ///
-/// @warning The returned value may be modified, but the modification must not
-/// change the value's key. Changing the key corrupts the tree ordering.
-BTreeError btree_get(BTree *tree, const void *key, void **value);
+/// @note The copied value is independent from the value stored in the tree.
+/// Modifying the copied value does not modify the tree.
+BTreeError btree_get(BTree *tree, const void *key, void *value);
+
+BTreeError btree_set(BTree *tree, const void *key, void *value);
 
 /// @brief Adds a value to a binary tree.
 ///
@@ -225,10 +223,10 @@ BTreeError btree_add(BTree *tree, const void *value);
 /// @return `BTREE_OK` if a matching value was removed successfully.
 /// @retval BTREE_OK If a matching value was removed successfully.
 /// @retval BTREE_NULL_POINTER_ARGUMENT If `tree == NULL` or `key == NULL`.
-/// @retval BTREE_VALUE_NOT_FOUND If no matching key exists in the tree.
-BTreeError btree_remove(BTree *tree, const void *key);
+/// @retval BTREE_KEY_NOT_FOUND If no matching key exists in the tree.
+BTreeError btree_remove(BTree *tree, const void *key, void *value);
 
-BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator);
+BTreeError btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilterFunction filter_function);
 
 void btree_iterator_free(BTreeIterator *iterator);
 
