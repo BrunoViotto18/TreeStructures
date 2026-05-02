@@ -55,7 +55,6 @@ struct AvlTreeIterator
     AvlTreeNode *current;
     AvlTreeNode *next;
     AvlTreeFilterFunction filter;
-    const void *context;
     size_t version;
 };
 
@@ -320,7 +319,7 @@ AvlTreeStatus avltree_remove(AvlTree *tree, const void *key, void *value)
     return AVLTREE_OK;
 }
 
-AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter, const void *context)
+AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter)
 {
     if (tree == NULL || iterator == NULL)
     {
@@ -341,7 +340,6 @@ AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, Av
     new_iterator->next = get_first_node_inorder(tree->root);
     new_iterator->version = tree->version;
     new_iterator->filter = filter;
-    new_iterator->context = context;
 
     *iterator = new_iterator;
 
@@ -380,7 +378,7 @@ AvlTreeStatus avltree_iterator_next(AvlTreeIterator *iterator, void *value)
         }
 
         iterator->next = get_next_node_inorder(iterator->current);
-    } while (iterator->filter != NULL && !iterator->filter(iterator->current->value, iterator->context));
+    } while (iterator->filter != NULL && !iterator->filter(iterator->current->value));
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
 
