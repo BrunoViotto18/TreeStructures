@@ -60,8 +60,9 @@ typedef int (*BTreeCompareKeyFunction)(const void *left, const void *right);
 
 /// @brief Checks whether a value should be included.
 /// @param value Value to check.
+/// @param context User-provided context pointer passed to the iterator.
 /// @return true if the value should be included, false otherwise.
-typedef bool (*BTreeFilterFunction)(const void *value);
+typedef bool (*BTreeFilterFunction)(const void *value, const void *context);
 
 /// @brief Frees resources owned by a stored value.
 /// @param value Stored value whose owned resources should be freed.
@@ -160,13 +161,14 @@ BTreeStatus btree_remove(BTree *tree, const void *key, void *value);
 /// @param tree Tree to iterate.
 /// @param iterator Output pointer that receives the created iterator.
 /// @param filter Optional function used to filter values, or NULL.
+/// @param context Context pointer used by the filter function.
 /// @return Result code indicating success or failure.
 /// @retval BTREE_OK The iterator was created successfully.
 /// @retval BTREE_NULL_POINTER_ARGUMENT tree or iterator was NULL.
 /// @retval BTREE_OUT_OF_MEMORY Memory allocation failed.
 /// @warning The tree must outlive the iterator.
-/// @warning Adding, removing, or clearing the tree invalidates the iterator.
-BTreeStatus btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilterFunction filter);
+/// @warning Adding, removing, or clearing a non-empty tree invalidates the iterator.
+BTreeStatus btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilterFunction filter, const void *context);
 
 /// @brief Frees a tree iterator.
 /// @param iterator Iterator to free, or NULL to do nothing.
