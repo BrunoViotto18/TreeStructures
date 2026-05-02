@@ -41,7 +41,6 @@ struct BTreeIterator
     BTree *tree;
     BTreeNode *current;
     BTreeNode *next;
-    BTreeFilterFunction filter;
     size_t version;
 };
 
@@ -304,7 +303,7 @@ BTreeStatus btree_remove(BTree *tree, const void *key, void *value)
     return BTREE_OK;
 }
 
-BTreeStatus btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilterFunction filter)
+BTreeStatus btree_iterator_new(BTree *tree, BTreeIterator **iterator)
 {
     if (tree == NULL || iterator == NULL)
     {
@@ -324,7 +323,6 @@ BTreeStatus btree_iterator_new(BTree *tree, BTreeIterator **iterator, BTreeFilte
     new_iterator->current = NULL;
     new_iterator->next = get_first_node_inorder(tree->root);
     new_iterator->version = tree->version;
-    new_iterator->filter = filter;
 
     *iterator = new_iterator;
 
@@ -353,19 +351,16 @@ BTreeStatus btree_iterator_next(BTreeIterator *iterator, void *value)
         return BTREE_ITERATOR_INVALID;
     }
 
-    do
+    iterator->current = iterator->next;
+
+    if (iterator->current == NULL)
     {
-        iterator->current = iterator->next;
-
-        if (iterator->current == NULL)
-        {
-            return BTREE_ITERATOR_END;
-        }
-
-        iterator->next = get_next_node_inorder(iterator->current);
-    } while (iterator->filter != NULL && !iterator->filter(iterator->current->value));
+        return BTREE_ITERATOR_END;
+    }
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
+
+    iterator->next = get_next_node_inorder(iterator->current);
 
     return BTREE_OK;
 }

@@ -54,7 +54,6 @@ struct AvlTreeIterator
     AvlTree *tree;
     AvlTreeNode *current;
     AvlTreeNode *next;
-    AvlTreeFilterFunction filter;
     size_t version;
 };
 
@@ -319,7 +318,7 @@ AvlTreeStatus avltree_remove(AvlTree *tree, const void *key, void *value)
     return AVLTREE_OK;
 }
 
-AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, AvlTreeFilterFunction filter)
+AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator)
 {
     if (tree == NULL || iterator == NULL)
     {
@@ -339,7 +338,6 @@ AvlTreeStatus avltree_iterator_new(AvlTree *tree, AvlTreeIterator **iterator, Av
     new_iterator->current = NULL;
     new_iterator->next = get_first_node_inorder(tree->root);
     new_iterator->version = tree->version;
-    new_iterator->filter = filter;
 
     *iterator = new_iterator;
 
@@ -368,19 +366,16 @@ AvlTreeStatus avltree_iterator_next(AvlTreeIterator *iterator, void *value)
         return AVLTREE_ITERATOR_INVALID;
     }
 
-    do
+    iterator->current = iterator->next;
+
+    if (iterator->current == NULL)
     {
-        iterator->current = iterator->next;
-
-        if (iterator->current == NULL)
-        {
-            return AVLTREE_ITERATOR_END;
-        }
-
-        iterator->next = get_next_node_inorder(iterator->current);
-    } while (iterator->filter != NULL && !iterator->filter(iterator->current->value));
+        return AVLTREE_ITERATOR_END;
+    }
 
     memcpy(value, iterator->current->value, iterator->tree->element_size);
+
+    iterator->next = get_next_node_inorder(iterator->current);
 
     return AVLTREE_OK;
 }
