@@ -16,7 +16,8 @@ static RbTreeNode **get_parent_child_ref(RbTree *tree, RbTreeNode *node);
 static RbTreeNode *get_node_by_key(RbTree *tree, const void *key);
 static RbTreeNode *get_brother_node(RbTreeNode *node);
 static void swap_colors(RbTreeNode *x, RbTreeNode *y);
-static void fix_add(RbTree *tree, RbTreeNode *node);
+static void rebalance_after_insert(RbTree *tree, RbTreeNode *node);
+static void rebalance_after_remove(RbTree *tree, RbTreeNode *parent, RbTreeNode *node);
 static RbTreeNode *get_first_node_inorder(RbTreeNode *node);
 static RbTreeNode *get_next_node_inorder(RbTreeNode *node);
 static RbTreeNode *get_first_node_postorder(RbTreeNode *node);
@@ -280,7 +281,7 @@ RbTreeStatus rbtree_add(RbTree *tree, const void *value)
     new_node->parent = parent;
     *node_ref = new_node;
 
-    fix_add(tree, new_node);
+    rebalance_after_insert(tree, new_node);
 
     tree->count++;
     tree->version++;
@@ -426,13 +427,60 @@ RbTreeNode *node_new(RbTree *tree, const void *value)
 
 void node_detach_full(RbTree *tree, RbTreeNode *node)
 {
-    if (node->left == NULL || node->right == NULL)
+    RbTreeNode **node_ref = get_parent_child_ref(tree, node);
+
+    if (node->color == RED && node->left == NULL && node->right == NULL)
     {
-        node_detach_simple(tree, node);
+        *node_ref = NULL;
+
+        node->left = NULL;
+        node->right = NULL;
+        node->parent = NULL;
+
         return;
     }
 
-    RbTreeNode **node_ref = get_parent_child_ref(tree, node);
+    if (node->color == BLACK && (node->left == NULL || node->right == NULL))
+    {
+        if (node->left != NULL && node->left->color == RED)
+        {
+            *node_ref = node->left;
+            node->left = node->parent;
+
+            node->left = NULL;
+            node->right = NULL;
+            node->parent = NULL;
+
+            return;
+        }
+
+        if (node->right != NULL && node->right->color == RED)
+        {
+            *node_ref = node->right;
+            node->right = node->parent;
+
+            node->left = NULL;
+            node->right = NULL;
+            node->parent = NULL;
+
+            return;
+        }
+
+        if (node->left == NULL && node->right == NULL)
+        {
+            *node_ref = NULL;
+
+            // TODO: Implement rebalance
+
+            node->left = NULL;
+            node->right = NULL;
+            node->parent = NULL;
+
+            return;
+        }
+    }
+
+    node_ref = get_parent_child_ref(tree, node);
     RbTreeNode *parent = node->parent;
 
     RbTreeNode *replacement = node->left;
@@ -461,6 +509,11 @@ void node_detach_full(RbTree *tree, RbTreeNode *node)
     node->left = NULL;
     node->right = NULL;
     node->parent = NULL;
+
+    if (replacement->color == BLACK)
+    {
+        // TODO: Implement
+    }
 }
 
 void node_detach_simple(RbTree *tree, RbTreeNode *node)
@@ -468,6 +521,7 @@ void node_detach_simple(RbTree *tree, RbTreeNode *node)
     assert(node->left == NULL || node->right == NULL);
 
     RbTreeNode **node_ref = get_parent_child_ref(tree, node);
+    RbTreeNode *parent = node->parent;
 
     RbTreeNode *child = node->left != NULL
                             ? node->left
@@ -549,7 +603,7 @@ void swap_colors(RbTreeNode *x, RbTreeNode *y)
     y->color = temp;
 }
 
-void fix_add(RbTree *tree, RbTreeNode *node)
+void rebalance_after_insert(RbTree *tree, RbTreeNode *node)
 {
     while (node != tree->root && node->parent != tree->root && node->parent->color == RED)
     {
@@ -599,6 +653,13 @@ void fix_add(RbTree *tree, RbTreeNode *node)
     if (tree->root != NULL)
     {
         tree->root->color = BLACK;
+    }
+}
+
+void rebalance_after_remove(RbTree *tree, RbTreeNode *parent, RbTreeNode *node)
+{
+    while (true)
+    {
     }
 }
 
