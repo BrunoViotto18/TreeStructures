@@ -614,7 +614,7 @@ void rebalance_after_insert(RbTree *tree, RbTreeNode *node)
             rotate_right(tree, grandparent);
             swap_colors(grandparent, parent);
 
-            node = parent;
+            break;
         }
         else if (grandparent != NULL)
         {
@@ -629,7 +629,7 @@ void rebalance_after_insert(RbTree *tree, RbTreeNode *node)
             rotate_left(tree, grandparent);
             swap_colors(grandparent, parent);
 
-            node = parent;
+            break;
         }
     }
 
