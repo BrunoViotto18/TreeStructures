@@ -14,9 +14,10 @@ static const void *get_value_key(const void *value);
 
 static RbTreeNode **get_parent_child_ref(RbTree *tree, RbTreeNode *node);
 static RbTreeNode *get_node_by_key(RbTree *tree, const void *key);
-static RbTreeNode *get_brother_node(RbTreeNode *node);
+static RbTreeNode *get_sibling_node(RbTreeNode *node);
 static void swap_colors(RbTreeNode *x, RbTreeNode *y);
-static void fix_add(RbTree *tree, RbTreeNode *node);
+static void rebalance_after_insert(RbTree *tree, RbTreeNode *node);
+static void rebalance_after_remove(RbTree *tree, RbTreeNode *parent, RbTreeNode *node);
 static RbTreeNode *get_first_node_inorder(RbTreeNode *node);
 static RbTreeNode *get_next_node_inorder(RbTreeNode *node);
 static RbTreeNode *get_first_node_postorder(RbTreeNode *node);
@@ -280,7 +281,7 @@ RbTreeStatus rbtree_add(RbTree *tree, const void *value)
     new_node->parent = parent;
     *node_ref = new_node;
 
-    fix_add(tree, new_node);
+    rebalance_after_insert(tree, new_node);
 
     tree->count++;
     tree->version++;
@@ -426,14 +427,32 @@ RbTreeNode *node_new(RbTree *tree, const void *value)
 
 void node_detach_full(RbTree *tree, RbTreeNode *node)
 {
+    RbTreeNode **node_ref = get_parent_child_ref(tree, node);
+    RbTreeNode *parent = node->parent;
+
     if (node->left == NULL || node->right == NULL)
     {
+        RbTreeNode *child = NULL;
+        if (node->left != NULL)
+        {
+            child = node->left;
+        }
+        else if (node->right != NULL)
+        {
+            child = node->right;
+        }
+
         node_detach_simple(tree, node);
+
+        if (node->color == BLACK)
+        {
+            rebalance_after_remove(tree, parent, child);
+        }
+
         return;
     }
 
-    RbTreeNode **node_ref = get_parent_child_ref(tree, node);
-    RbTreeNode *parent = node->parent;
+    node_ref = get_parent_child_ref(tree, node);
 
     RbTreeNode *replacement = node->left;
     while (replacement->right != NULL)
@@ -441,6 +460,9 @@ void node_detach_full(RbTree *tree, RbTreeNode *node)
         replacement = replacement->right;
     }
 
+    RbTreeNode *replacement_child = replacement->left;
+    RbTreeNode *replacement_parent = replacement->parent;
+    RbTreeNodeColor replacement_color = replacement->color;
     node_detach_simple(tree, replacement);
 
     replacement->left = node->left;
@@ -457,6 +479,19 @@ void node_detach_full(RbTree *tree, RbTreeNode *node)
 
     replacement->parent = parent;
     *node_ref = replacement;
+    replacement->color = node->color;
+
+    if (replacement_color == BLACK)
+    {
+        if (replacement_parent != node)
+        {
+            rebalance_after_remove(tree, replacement_parent, replacement_child);
+        }
+        else
+        {
+            rebalance_after_remove(tree, replacement, replacement_child);
+        }
+    }
 
     node->left = NULL;
     node->right = NULL;
@@ -465,19 +500,21 @@ void node_detach_full(RbTree *tree, RbTreeNode *node)
 
 void node_detach_simple(RbTree *tree, RbTreeNode *node)
 {
-    assert(node->left == NULL || node->right == NULL);
-
     RbTreeNode **node_ref = get_parent_child_ref(tree, node);
 
-    RbTreeNode *child = node->left != NULL
-                            ? node->left
-                            : node->right;
-
-    *node_ref = child;
-
-    if (child != NULL)
+    if (node->left != NULL)
     {
-        child->parent = node->parent;
+        *node_ref = node->left;
+        node->left->parent = node->parent;
+    }
+    else if (node->right != NULL)
+    {
+        *node_ref = node->right;
+        node->right->parent = node->parent;
+    }
+    else
+    {
+        *node_ref = NULL;
     }
 
     node->left = NULL;
@@ -526,7 +563,7 @@ RbTreeNode *get_node_by_key(RbTree *tree, const void *key)
     return node;
 }
 
-RbTreeNode *get_brother_node(RbTreeNode *node)
+RbTreeNode *get_sibling_node(RbTreeNode *node)
 {
     RbTreeNode *parent = node->parent;
     if (parent == NULL)
@@ -549,13 +586,13 @@ void swap_colors(RbTreeNode *x, RbTreeNode *y)
     y->color = temp;
 }
 
-void fix_add(RbTree *tree, RbTreeNode *node)
+void rebalance_after_insert(RbTree *tree, RbTreeNode *node)
 {
     while (node != tree->root && node->parent != tree->root && node->parent->color == RED)
     {
         RbTreeNode *parent = node->parent;
         RbTreeNode *grandparent = parent->parent;
-        RbTreeNode *uncle = get_brother_node(parent);
+        RbTreeNode *uncle = get_sibling_node(parent);
 
         if (uncle != NULL && uncle->color == RED)
         {
@@ -599,6 +636,81 @@ void fix_add(RbTree *tree, RbTreeNode *node)
     if (tree->root != NULL)
     {
         tree->root->color = BLACK;
+    }
+}
+
+void rebalance_after_remove(RbTree *tree, RbTreeNode *parent, RbTreeNode *node)
+{
+    while (node != tree->root && (node == NULL || node->color == BLACK))
+    {
+        RbTreeNode *sibling = parent->left == node
+                                  ? parent->right
+                                  : parent->left;
+
+        if (sibling->color == RED)
+        {
+            sibling->color = BLACK;
+            parent->color = RED;
+            if (parent->right == sibling)
+            {
+                rotate_left(tree, parent);
+                sibling = parent->right;
+            }
+            else
+            {
+                rotate_right(tree, parent);
+                sibling = parent->left;
+            }
+        }
+
+        if ((sibling->left == NULL || sibling->left->color == BLACK) && (sibling->right == NULL || sibling->right->color == BLACK))
+        {
+            sibling->color = RED;
+            node = parent;
+            parent = node->parent;
+            continue;
+        }
+
+        if (parent->right == sibling && (sibling->right == NULL || sibling->right->color == BLACK))
+        {
+            if (sibling->left != NULL)
+            {
+                sibling->left->color = BLACK;
+            }
+            sibling->color = RED;
+            rotate_right(tree, sibling);
+            sibling = parent->right;
+        }
+        else if (parent->left == sibling && (sibling->left == NULL || sibling->left->color == BLACK))
+        {
+            if (sibling->right != NULL)
+            {
+                sibling->right->color = BLACK;
+            }
+            sibling->color = RED;
+            rotate_left(tree, sibling);
+            sibling = parent->left;
+        }
+
+        sibling->color = parent->color;
+        parent->color = BLACK;
+        if (parent->right == sibling)
+        {
+            sibling->right->color = BLACK;
+            rotate_left(tree, parent);
+        }
+        else
+        {
+            sibling->left->color = BLACK;
+            rotate_right(tree, parent);
+        }
+
+        break;
+    }
+
+    if (node != NULL)
+    {
+        node->color = BLACK;
     }
 }
 
